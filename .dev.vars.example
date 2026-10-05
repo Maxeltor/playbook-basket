@@ -1,0 +1,5 @@
+# Copier ce fichier en .dev.vars pour le développement local.
+# En production : npx wrangler pages secret put ADMIN_PASSWORD (voir README).
+# Le compte administrateur est créé à la 1re connexion avec ces identifiants (si aucun compte n existe).
+ADMIN_USER=admin
+ADMIN_PASSWORD=changez-moi-123

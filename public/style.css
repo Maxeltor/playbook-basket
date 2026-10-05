@@ -1,0 +1,597 @@
+/* =============================================================
+   Playbook Basket — feuille de style
+   -------------------------------------------------------------
+   1. Variables (couleurs, polices, tailles)  ← personnaliser ici
+   2. Thème sombre
+   3. Base
+   4. En-tête
+   5. Barres d'outils & boutons
+   6. Terrain (SVG)
+   7. Contrôles de lecture
+   8. Bibliothèque « Mes systèmes » & connexion équipe
+   9. Export / import
+  10. Écran large (laptop) : terrain + panneau côte à côte
+   ============================================================= */
+
+
+/* ---------- 1. Variables : thème clair (par défaut) ---------- */
+:root {
+  /* Interface */
+  --bg: #e6ebf1;          /* fond de la page */
+  --card: #fff;           /* fond des boutons, champs, cartes */
+  --ink: #0f1b2d;         /* texte principal + tracés des actions */
+  --muted: #5d6b80;       /* texte secondaire */
+  --line: #c9d2de;        /* bordures */
+  --active-bg: #0f1b2d;   /* bouton actif (outil sélectionné…) */
+  --active-fg: #fff;
+
+  /* Terrain */
+  --court: #e9c88f;       /* parquet */
+  --out: #cfd6e0;         /* hors du terrain */
+  --court-lines: #7a4b1c; /* lignes peintes */
+
+  /* Joueurs, balle, lignes de passe */
+  --att: #1d4ed8;         /* attaquants */
+  --att-text: #fff;       /* numéro des attaquants */
+  --def: #c2261f;         /* défenseurs + ligne de passe bloquée */
+  --ball: #f97316;        /* balle, cercle du panier, sélection */
+  --ball-seam: #7c2d12;   /* coutures de la balle */
+  --lane-open: #16a34a;   /* ligne de passe dégagée */
+
+  /* Polices */
+  --font-title: 'Barlow Condensed', Impact, sans-serif;
+  --font-ui: 'Barlow Condensed', system-ui, sans-serif;
+  --font-body: system-ui, sans-serif;
+
+  /* Dimensions */
+  --radius: 8px;
+  --page-width: 600px;        /* largeur max sur téléphone / tablette */
+  --page-width-wide: 1440px;  /* largeur max sur écran large */
+  --panel-width: 380px;       /* largeur du panneau d'outils sur écran large */
+
+  box-sizing: border-box;
+  /* Encoche / barre d'accueil des téléphones */
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+
+/* ---------- 2. Thème sombre ----------
+   Deux blocs aux valeurs identiques (à garder synchronisés) :
+   - le premier suit le réglage du système,
+   - le second s'applique si on force <html data-theme="dark">.
+   <html data-theme="light"> force le thème clair. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0d121b;
+    --card: #18202e;
+    --ink: #eaf0f8;
+    --muted: #93a1b6;
+    --line: #2c3849;
+    --active-bg: #eaf0f8;
+    --active-fg: #0d121b;
+    --court: #3a3226;
+    --out: #232a36;
+    --court-lines: #a98b5c;
+    --att: #6ea0ff;
+    --def: #ff7b72;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d121b;
+  --card: #18202e;
+  --ink: #eaf0f8;
+  --muted: #93a1b6;
+  --line: #2c3849;
+  --active-bg: #eaf0f8;
+  --active-fg: #0d121b;
+  --court: #3a3226;
+  --out: #232a36;
+  --court-lines: #a98b5c;
+  --att: #6ea0ff;
+  --def: #ff7b72;
+}
+
+
+/* ---------- 3. Base ---------- */
+html {
+  scroll-padding-top: env(safe-area-inset-top, 0px);
+}
+
+body {
+  max-width: var(--page-width);
+  margin: 0 auto;
+  padding: 10px;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px var(--font-body);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+
+/* ---------- 4. En-tête ---------- */
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+h1 {
+  margin: 0;
+  min-width: 0;
+  font: 700 26px var(--font-title);
+  letter-spacing: .5px;
+  /* Nom trop long → « … » */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-right {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+}
+
+#timer {
+  font: 700 28px var(--font-title);
+  font-variant-numeric: tabular-nums; /* chiffres de largeur fixe : le chrono ne « saute » pas */
+}
+
+
+/* ---------- 5. Barres d'outils & boutons ---------- */
+
+/* Rangée de boutons défilant horizontalement sur petit écran */
+.toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.toolbar::-webkit-scrollbar {
+  display: none;
+}
+
+button,
+select {
+  flex: none;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 500 17px var(--font-ui);
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+/* Bouton actif / sélectionné (classe ajoutée par app.js) */
+button.is-active {
+  background: var(--active-bg);
+  border-color: var(--active-bg);
+  color: var(--active-fg);
+  font-weight: 700;
+}
+
+/* Survol (souris uniquement) et focus clavier */
+@media (hover: hover) {
+  button:not(:disabled):not(.is-active):hover,
+  select:hover {
+    border-color: var(--muted);
+  }
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--ball);
+  outline-offset: 2px;
+}
+
+/* Onglets de phase : boutons arrondis */
+.tab {
+  border-radius: 999px;
+}
+
+/* Titres de groupes et aide clavier : écran large uniquement (voir section 10) */
+.panel-title,
+.shortcuts {
+  display: none;
+}
+
+kbd {
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--card);
+  font: 12px var(--font-body);
+}
+
+
+/* ---------- 6. Terrain (SVG) ---------- */
+.court {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: var(--out);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  touch-action: none;  /* empêche le défilement de la page pendant un tracé au doigt */
+  user-select: none;
+}
+
+/* Numéros des joueurs, distances… */
+.court text {
+  font-family: var(--font-ui);
+  font-weight: 700;
+}
+
+/* Action sélectionnée */
+.court .is-selected {
+  filter: drop-shadow(0 0 4px var(--ball));
+}
+
+#message {
+  min-height: 18px;
+  margin: 6px 2px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+
+/* ---------- 7. Contrôles de lecture ---------- */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+
+.controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+#btn-play {
+  min-width: 110px;
+  font-size: 20px;
+}
+
+
+/* ---------- 8. Bibliothèque « Mes systèmes » ---------- */
+#library {
+  margin-top: 14px;
+}
+
+.library-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+#library h2 {
+  margin: 0;
+  font: 700 22px var(--font-title);
+}
+
+/* Pastille « En ligne / Local » (cliquable en ligne pour changer de code) */
+.badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 15px;
+}
+.badge:disabled {
+  opacity: 1;
+}
+.badge.is-online {
+  border-color: var(--lane-open);
+  color: var(--lane-open);
+}
+
+.team-form {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.team-form p {
+  margin: 0 0 4px;
+}
+#btn-upload-local {
+  width: 100%;
+  margin-top: 4px;
+}
+
+#system-name,
+.team-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 16px var(--font-body); /* 16px minimum : évite le zoom auto sur iOS */
+}
+.team-form input {
+  flex: 1 1 140px;
+}
+
+.library-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+
+/* Système actuellement ouvert */
+.library-item.is-current {
+  border: 2px solid var(--att);
+}
+
+.library-item b {
+  font: 700 19px var(--font-ui);
+}
+
+.library-item small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.library-actions {
+  display: flex;
+  gap: 6px;
+}
+
+
+/* ---------- 9. Export / import ---------- */
+details {
+  margin-top: 8px;
+}
+
+summary {
+  color: var(--muted);
+  cursor: pointer;
+}
+
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 110px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 12px monospace;
+}
+
+
+/* ---------- 10. Écran large (laptop) ----------
+   Terrain à gauche (dimensionné sur la hauteur de la fenêtre pour
+   rester entièrement visible), panneau d'outils à droite. */
+@media (min-width: 960px) {
+  body {
+    max-width: var(--page-width-wide);
+    padding: 12px 24px;
+  }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--panel-width);
+    gap: 24px;
+    align-items: start;
+  }
+
+  /* Le terrain reste visible quand on fait défiler le panneau */
+  .stage {
+    position: sticky;
+    top: 12px;
+  }
+
+  /* Hauteur de la fenêtre moins en-tête, onglets et message (~160px),
+     convertie en largeur selon les proportions du terrain (590 × 560). */
+  .court {
+    width: min(100%, calc((100vh - 160px) * 590 / 560));
+    margin: 0 auto;
+  }
+
+  .stage #phase-tabs,
+  .stage #message {
+    max-width: calc((100vh - 160px) * 590 / 560);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* Panneau : les boutons passent à la ligne au lieu de défiler */
+  .panel {
+    padding: 4px 0 4px 24px;
+    border-left: 1px solid var(--line);
+  }
+
+  .panel .toolbar {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+
+  .panel-title {
+    display: block;
+    margin: 10px 0 4px;
+    color: var(--muted);
+    font: 700 13px var(--font-ui);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .panel-title:first-child {
+    margin-top: 0;
+  }
+
+  .shortcuts {
+    display: block;
+    line-height: 1.9;
+    font-size: 13px;
+  }
+}
+
+/* Raccourcis clavier inutiles sur écran tactile */
+@media (min-width: 960px) and (hover: none) {
+  .shortcuts {
+    display: none;
+  }
+}
+
+
+/* ---------- 11. Comptes : équipes, lecture seule, administration ---------- */
+
+/* Compte « lecteur » : tout ce qui modifie un système est masqué */
+body.is-readonly .edit-only {
+  display: none !important;
+}
+
+#team-select {
+  flex: 1;
+  min-width: 0;
+  max-width: 200px;
+  margin-left: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 16px var(--font-body);
+}
+
+#admin {
+  margin-top: 18px;
+  padding-top: 10px;
+  border-top: 2px solid var(--line);
+}
+#admin h2 {
+  margin: 0 0 4px;
+  font: 700 22px var(--font-title);
+}
+#admin h3 {
+  margin: 12px 0 4px;
+  font: 700 18px var(--font-title);
+}
+
+.admin-row {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+}
+.admin-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.admin-row-head b {
+  font: 700 19px var(--font-ui);
+}
+.admin-row-head small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.admin-row-head select {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 15px var(--font-body);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chips label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 14px;
+}
+
+.admin-form {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+.admin-form button[type="submit"] {
+  margin-top: 6px;
+}
+
+#new-team-name,
+#new-user-name,
+#new-user-pass {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 16px var(--font-body);
+}
+#new-team-form {
+  margin-top: 6px;
+}
+#new-user-role {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 16px var(--font-body);
+}
+.admin-row-head small { display: block; }
+
+/* Numéro de version, fixé en bas à droite */
+.app-version {
+  position: fixed;
+  right: 8px;
+  bottom: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 12px;
+  opacity: .85;
+  pointer-events: none;
+}

@@ -1,0 +1,172 @@
+<!doctype html>
+<!--
+  Playbook Basket — éditeur de systèmes de jeu (demi-terrain).
+
+  Fichiers :
+    index.html  → structure de la page (ce fichier)
+    style.css   → apparence (couleurs, polices, tailles, mise en page laptop)
+    app.js      → logique (dessin du terrain, outils, animation, sauvegarde)
+    ../functions/api/ → API de sauvegarde en ligne (Cloudflare Pages Functions)
+
+  Les zones vides (onglets, barres d'outils, terrain…) sont remplies
+  par app.js. Les « id » ci-dessous sont utilisés par app.js
+  (voir la section « Références DOM ») : si vous en renommez un,
+  renommez-le aussi là-bas.
+
+  Mise en page : sur téléphone tout est empilé ; sur un écran large
+  (≥ 960 px), .stage (terrain) et .panel (outils) sont côte à côte.
+-->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Playbook Basket</title>
+
+  <!-- Police des titres / boutons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="style.css">
+  <!-- « defer » : le script s'exécute une fois la page chargée -->
+  <script src="app.js" defer></script>
+</head>
+<body>
+
+  <!-- ===== En-tête : titre (nom du système), accès bibliothèque, chrono ===== -->
+  <header class="app-header">
+    <h1 id="title">Playbook Basket</h1>
+    <div class="header-right">
+      <button type="button" id="btn-goto-library">📁 Mes systèmes</button>
+      <button type="button" id="btn-logout" hidden>Déconnexion</button>
+      <span id="timer">00:00.0</span>
+    </div>
+  </header>
+
+  <main class="layout">
+
+    <!-- ===== Colonne terrain ===== -->
+    <section class="stage">
+      <!-- Onglets des phases (générés par app.js) -->
+      <nav class="toolbar" id="phase-tabs" aria-label="Phases"></nav>
+
+      <!-- viewBox : le terrain fait 500 × 470 unités, avec une marge de 45 tout autour -->
+      <svg id="court" class="court" viewBox="-45 -45 590 560" role="img" aria-label="Terrain de basket"></svg>
+
+      <!-- Message d'aide contextuel -->
+      <p id="message" aria-live="polite"></p>
+    </section>
+
+    <!-- ===== Colonne outils ===== -->
+    <aside class="panel">
+
+      <!-- Barres d'outils (générées par app.js). Les titres ne s'affichent que sur écran large. -->
+      <h3 class="panel-title edit-only">Outils</h3>
+      <div class="toolbar edit-only" id="tool-bar"></div>      <!-- Placer, Course, Dribble, Passe, Écran, Gomme -->
+      <h3 class="panel-title edit-only">Joueurs</h3>
+      <div class="toolbar edit-only" id="roster-bar"></div>    <!-- + Attaquant, + Défenseur, + Balle, Possibilité -->
+      <h3 class="panel-title edit-only">Édition</h3>
+      <div class="toolbar edit-only" id="history-bar"></div>   <!-- Annuler, Rétablir, Supprimer, Reset -->
+
+      <!-- Lecture et durées -->
+      <h3 class="panel-title">Lecture</h3>
+      <div class="controls">
+        <button type="button" id="btn-play" class="is-active">▶ Lecture</button>
+
+        <label>Vitesse
+          <select id="speed">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2">2x</option>
+          </select>
+        </label>
+
+        <label>Durée de la phase
+          <input id="duration" type="range" min="1" max="10" step="0.5" value="3">
+          <b id="duration-value">3 s</b>
+        </label>
+
+        <button type="button" id="btn-same-duration">Même durée partout</button>
+        <span id="total-duration" class="muted"></span>
+      </div>
+
+      <p class="shortcuts muted">
+        Raccourcis : <kbd>Espace</kbd> lecture · <kbd>1</kbd>…<kbd>6</kbd> outils ·
+        <kbd>Suppr</kbd> effacer la sélection · <kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> annuler / rétablir
+      </p>
+
+      <!-- ===== Bibliothèque « Mes systèmes » (en ligne si l'API répond, sinon dans le navigateur) ===== -->
+      <section id="library">
+        <div class="library-head">
+          <h2>Mes systèmes</h2>
+          <select id="team-select" aria-label="Équipe" hidden></select>
+          <button type="button" id="cloud-status" class="badge" disabled>…</button>
+        </div>
+
+        <!-- Connexion (affiché par app.js si nécessaire) -->
+        <form id="team-form" class="team-form" hidden>
+          <p class="muted">Connecte-toi pour accéder aux systèmes de ton équipe.</p>
+          <div class="controls">
+            <input id="login-user" type="text" placeholder="Identifiant" autocomplete="username" required>
+            <input id="login-pass" type="password" placeholder="Mot de passe" autocomplete="current-password" required>
+            <button type="submit">Se connecter</button>
+          </div>
+        </form>
+
+        <div class="controls edit-only">
+          <input id="system-name" type="text" placeholder="Nom du système" maxlength="40">
+          <button type="button" id="btn-save">Enregistrer</button>
+        </div>
+        <button type="button" id="btn-upload-local" class="edit-only" hidden></button>
+        <div id="library-list"></div>
+      </section>
+
+      <!-- ===== Administration : équipes et comptes (rôle admin uniquement) ===== -->
+      <section id="admin" hidden>
+        <h2>Administration</h2>
+
+        <h3>Équipes</h3>
+        <div id="admin-teams"></div>
+        <form id="new-team-form" class="controls">
+          <input id="new-team-name" type="text" placeholder="Nom de la nouvelle équipe" maxlength="40" required>
+          <button type="submit">Créer l’équipe</button>
+        </form>
+
+        <h3>Comptes</h3>
+        <p class="muted">Admin : tout gérer. Éditeur : modifie les systèmes de ses équipes. Lecteur : consulte seulement.</p>
+        <div id="admin-users"></div>
+        <form id="new-user-form" class="admin-form">
+          <div class="controls">
+            <input id="new-user-name" type="text" placeholder="Identifiant" maxlength="30" autocomplete="off" required>
+            <input id="new-user-pass" type="text" placeholder="Mot de passe (8 caractères min.)" minlength="8" autocomplete="off" required>
+            <select id="new-user-role" aria-label="Rôle">
+              <option value="editor">Éditeur</option>
+              <option value="reader">Lecteur</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <div id="new-user-teams" class="chips"></div>
+          <button type="submit">Créer le compte</button>
+        </form>
+      </section>
+
+      <!-- ===== Export / import JSON ===== -->
+      <details class="edit-only">
+        <summary>Export et import JSON</summary>
+        <div class="controls">
+          <button type="button" id="btn-export">Exporter</button>
+          <button type="button" id="btn-import">Importer</button>
+          <button type="button" id="btn-new">Nouveau système</button>
+        </div>
+        <textarea id="json" placeholder="Le JSON du système apparaît ici. Collez-en un puis Importer."></textarea>
+      </details>
+
+    </aside>
+  </main>
+
+  <!-- Numéro de version (écrit à chaque « npm run deploy » dans version.json) -->
+  <small id="app-version" class="app-version" hidden></small>
+
+</body>
+</html>

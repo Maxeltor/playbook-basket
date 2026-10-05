@@ -1,0 +1,12 @@
+# Configuration Cloudflare Pages (front statique + API dans functions/)
+name = "playbook-basket"
+pages_build_output_dir = "public"
+compatibility_date = "2025-01-01"
+
+# Base de données D1. Après `npx wrangler d1 create playbook-basket`,
+# remplacez database_id par l'identifiant affiché.
+# binding doit rester "DB" : c'est le nom utilisé par functions/api/ (env.DB).
+[[d1_databases]]
+binding = "DB"
+database_name = "playbook-basket"
+database_id = "c7bf1b05-2755-43f8-ae1b-1adc9338d249"

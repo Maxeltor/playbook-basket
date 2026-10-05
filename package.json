@@ -1,0 +1,17 @@
+{
+  "name": "playbook-basket",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler pages dev --live-reload",
+    "db:init:local": "wrangler d1 execute playbook-basket --local --file=schema.sql",
+    "db:init": "wrangler d1 execute playbook-basket --remote --file=schema.sql",
+    "deploy": "node scripts/deploy.js"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20261001.1": true
+  }
+}
