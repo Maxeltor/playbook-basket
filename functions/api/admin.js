@@ -11,7 +11,7 @@
  *     delete-user  { id }
  * ============================================================= */
 
-import { json, hashPassword, randomHex } from './_middleware.js';
+import { json, hashPassword, randomHex, newTeamCode } from './_middleware.js';
 
 const ROLES = ['admin', 'editor', 'reader'];
 const MAX_TEAM_NAME = 40;
@@ -57,7 +57,7 @@ export async function onRequestPost({ request, env, data }) {
     case 'create-team': {
       const name = str(body.name);
       if (!name || name.length > MAX_TEAM_NAME) return bad('invalid-name');
-      const res = await db.prepare('INSERT INTO teams (name) VALUES (?) ON CONFLICT (name) DO NOTHING').bind(name).run();
+      const res = await db.prepare('INSERT INTO teams (name, code) VALUES (?, ?) ON CONFLICT (name) DO NOTHING').bind(name, newTeamCode()).run();
       return res.meta.changes ? json({ ok: true }) : json({ error: 'name-taken' }, 409);
     }
 

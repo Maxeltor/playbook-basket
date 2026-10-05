@@ -8,6 +8,7 @@
  *   admin  → crée équipes et comptes, lit et modifie toutes les équipes
  *   editor → lit et modifie les équipes auxquelles il est rattaché
  *   reader → lit seulement les équipes auxquelles il est rattaché
+ *   guest  → sans compte : lit une équipe dont il a saisi le code
  * ============================================================= */
 
 export const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {
@@ -16,6 +17,7 @@ export const json = (data, status = 200, headers = {}) => new Response(JSON.stri
 });
 
 export const SESSION_COOKIE = 'pb_session';
+export const TEAM_COOKIE = 'pb_team';   // invité : code de l'équipe rejointe sans compte
 export const SESSION_DAYS = 30;
 const PBKDF2_ITERATIONS = 100_000;  // maximum accepté par Cloudflare Workers
 
@@ -32,6 +34,12 @@ const toHex = bytes => [...bytes].map(b => b.toString(16).padStart(2, '0')).join
 const fromHex = hex => new Uint8Array(hex.match(/../g).map(h => parseInt(h, 16)));
 
 export const randomHex = n => toHex(crypto.getRandomValues(new Uint8Array(n)));
+
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';  // sans 0/O/1/I
+
+/** Code d'équipe : 8 caractères faciles à dicter. */
+export const newTeamCode = () =>
+  [...crypto.getRandomValues(new Uint8Array(8))].map(b => CODE_ALPHABET[b % CODE_ALPHABET.length]).join('');
 
 export async function hashPassword(password, saltHex) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
@@ -50,22 +58,35 @@ export function readCookie(request, name) {
   return match ? match.slice(name.length + 1) : '';
 }
 
-export function sessionCookie(request, value, maxAgeSeconds) {
+export function sessionCookie(request, value, maxAgeSeconds, name = SESSION_COOKIE) {
   const secure = new URL(request.url).protocol === 'https:' ? '; Secure' : '';
-  return `${SESSION_COOKIE}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure}`;
+  return `${name}=${value}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${maxAgeSeconds}${secure}`;
 }
 
-/** Utilisateur de la session en cours, ou null. */
+/**
+ * Utilisateur de la requête, ou null : compte connecté, sinon invité
+ * { id: null, username: '', role: 'guest', guestTeamId } qui a saisi le code d'une équipe
+ * (lecture seule de cette équipe ; changer le code de l'équipe révoque l'invité).
+ */
 export async function currentUser(request, db) {
   const token = readCookie(request, SESSION_COOKIE);
-  if (!token) return null;
-  return db.prepare(`SELECT u.id, u.username, u.role FROM sessions s JOIN users u ON u.id = s.user_id
-      WHERE s.token_hash = ? AND s.expires_at > ?`)
-    .bind(await sha256Hex(token), Date.now()).first();
+  if (token) {
+    const user = await db.prepare(`SELECT u.id, u.username, u.role FROM sessions s JOIN users u ON u.id = s.user_id
+        WHERE s.token_hash = ? AND s.expires_at > ?`)
+      .bind(await sha256Hex(token), Date.now()).first();
+    if (user) return user;
+  }
+  const code = readCookie(request, TEAM_COOKIE);
+  const team = code ? await db.prepare('SELECT id FROM teams WHERE code = ?').bind(code).first() : null;
+  return team ? { id: null, username: '', role: 'guest', guestTeamId: team.id } : null;
 }
 
 /** Équipes visibles par l'utilisateur : [{ id, name }]. */
 export async function teamsOf(db, user) {
+  if (user.role === 'guest') {
+    const { results } = await db.prepare('SELECT id, name FROM teams WHERE id = ?').bind(user.guestTeamId).all();
+    return results;
+  }
   const sql = user.role === 'admin'
     ? 'SELECT id, name FROM teams ORDER BY name'
     : `SELECT t.id, t.name FROM teams t JOIN memberships m ON m.team_id = t.id
@@ -78,6 +99,7 @@ export async function teamsOf(db, user) {
 /** Droit de l'utilisateur sur une équipe : 'write' | 'read' | null. */
 export async function teamAccess(db, user, teamId) {
   if (!Number.isInteger(teamId)) return null;
+  if (user.role === 'guest') return teamId === user.guestTeamId ? 'read' : null;
   if (user.role === 'admin') {
     return (await db.prepare('SELECT id FROM teams WHERE id = ?').bind(teamId).first()) ? 'write' : null;
   }
@@ -92,15 +114,17 @@ export async function onRequest({ request, env, next, data }) {
     return json({ error: 'server-config', message: 'base D1 non liée sous le nom « DB »' }, 500);
   }
 
-  // La connexion est la seule route publique
-  const isLogin = request.method === 'POST' && new URL(request.url).pathname.replace(/\/$/, '') === '/api/auth';
+  // Routes publiques : la connexion, et « rejoindre une équipe avec son code » (team.js vérifie le reste)
+  const path = new URL(request.url).pathname.replace(/\/$/, '');
+  const isLogin = request.method === 'POST' && path === '/api/auth';
+  const isJoin = request.method === 'POST' && path === '/api/team';
   if (!isLogin) {
     try {
       data.user = await currentUser(request, env.DB);
     } catch (e) {
       return json({ error: 'server-config', message: 'tables absentes : lancer schema.sql' }, 500);
     }
-    if (!data.user) return json({ error: 'unauthorized' }, 401);
+    if (!data.user && !isJoin) return json({ error: 'unauthorized' }, 401);
   }
   return next();
 }

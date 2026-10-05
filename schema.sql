@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE TABLE IF NOT EXISTS teams (
   id   INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL UNIQUE COLLATE NOCASE
+  name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  code TEXT                              -- code d'équipe : permet à un compte de rejoindre l'équipe
 );
 
 -- Rattachement d'un compte (éditeur ou lecteur) à une équipe. Les admins n'en ont pas besoin.

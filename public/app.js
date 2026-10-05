@@ -18,7 +18,8 @@
  *   14. Boutons & contrôles
  *   15. Lecture de l'animation
  *   16. Bibliothèque « Mes systèmes »  (en ligne via l'API, sinon navigateur)
- *   17. Démarrage
+ *   17. Partage & export        (lien, JSON, GIF, vue d'un système partagé)
+ *   18. Démarrage
  *
  * -------------------------------------------------------------
  * Format des données (sauvegardé et exporté en JSON).
@@ -212,6 +213,22 @@ const MSG = {
 
 Écraser cette version avec la tienne ?`,
   conflictKept: name => `« ${name} » n’a pas été écrasé. Enregistre sous un autre nom ou rouvre-le.`,
+  badCode: 'Code d’équipe inconnu.',
+  guestJoined: name => `Tu consultes l’équipe « ${name} » sans compte (lecture seule). « Déconnexion » pour revenir à tes systèmes locaux.`,
+  joined: name => `Tu as rejoint l’équipe « ${name} ».`,
+  codeChanged: 'Nouveau code d’équipe créé : l’ancien ne fonctionne plus.',
+  confirmRemoveMember: (user, team) => `Retirer « ${user} » de l’équipe « ${team} » ? Son compte est conservé.`,
+  confirmNewCode: 'Créer un nouveau code ? L’ancien code ne fonctionnera plus.',
+  teamCodeHelp: 'Un compte connecté rejoint l’équipe en saisissant ce code (« Rejoindre l’équipe »).',
+  linkCopied: 'Lien copié : toute personne qui l’ouvre voit ce système dans l’application.',
+  linkPrompt: 'Copie ce lien :',
+  confirmReplaceDraft: 'Remplacer le système que tu étais en train d’éditer par cette copie ? (Enregistre-le d’abord dans « Mes systèmes » pour le garder.)',
+  linkFailed: 'Impossible de créer le lien de partage.',
+  sharedOpened: name => `Système partagé${name ? ' « ' + name + ' »' : ''} ouvert en lecture seule.`,
+  sharedInvalid: 'Ce lien de partage est invalide ou incomplet.',
+  gifProgress: pct => `Création du GIF… ${pct} %`,
+  gifDone: 'GIF créé.',
+  gifFailed: 'Impossible de créer le GIF avec ce navigateur.',
   uploadLocal: n => `⤴ Envoyer en ligne ${n} système${n > 1 ? 's' : ''} enregistré${n > 1 ? 's' : ''} dans ce navigateur`,
   uploaded: (sent, kept) => `${sent} système${sent > 1 ? 's' : ''} envoyé${sent > 1 ? 's' : ''} en ligne.`
     + (kept ? ` ${kept} non envoyé${kept > 1 ? 's' : ''} : ce nom existe déjà en ligne (ouvre-le et enregistre-le sous un autre nom).` : ''),
@@ -221,7 +238,7 @@ const MSG = {
 const CLOUD_BADGE = {
   checking: ['…', 'Connexion au serveur…'],
   online:   ['☁ En ligne', 'Bibliothèque partagée avec l’équipe.'],
-  locked:   ['🔒 Se connecter', 'Connecte-toi avec ton compte pour accéder aux systèmes de ton équipe.'],
+  locked:   ['💾 Local', 'Sans compte, les systèmes sont enregistrés dans ce navigateur. Connecte-toi pour accéder à ceux de ton équipe.'],
   offline:  ['💾 Local', 'Pas de serveur : les systèmes sont enregistrés dans ce navigateur uniquement.'],
 };
 
@@ -309,6 +326,15 @@ const dom = {
   importBtn:      $('#btn-import'),
   newSystem:      $('#btn-new'),
   json:           $('#json'),
+  sharedBanner:   $('#shared-banner'),
+  sharedCopy:     $('#btn-shared-copy'),
+  share:          $('#btn-share'),
+  exportFile:     $('#btn-export-file'),
+  exportGif:      $('#btn-export-gif'),
+  joinForm:       $('#join-form'),
+  joinCode:       $('#join-code'),
+  teamPanel:      $('#team-panel'),
+  teamInfo:       $('#team-info'),
 };
 
 
@@ -342,10 +368,14 @@ const cloud = {
   teamId: null,        // équipe dont la bibliothèque est affichée
   busy: false,         // requête d'enregistrement / suppression en cours
   base: null,          // { name, t } : version en ligne du système ouvert (détection des conflits)
+  teamInfo: null,      // { id, name, code, members } : équipe active, pour les éditeurs et admins
 };
 const isOnline = () => cloud.status === 'online';
-/** Compte « lecteur » connecté : consultation seulement (le serveur refuse aussi toute écriture). */
-const readOnly = () => isOnline() && !!cloud.user && cloud.user.role === 'reader';
+let sharedView = false;          // un système ouvert depuis un lien de partage est affiché (lecture seule)
+/** Consultation seulement : système partagé, ou compte « lecteur » (le serveur refuse aussi toute écriture). */
+const readOnly = () => sharedView || (isOnline() && !!cloud.user && (cloud.user.role === 'reader' || cloud.user.role === 'guest'));
+/** Compte éditeur ou admin avec une équipe active. */
+const canManageTeam = () => !!cloud.user && (cloud.user.role === 'editor' || cloud.user.role === 'admin') && cloud.teamId != null;
 let readOnlyShown = false;       // état de lecture seule actuellement appliqué à l'interface
 let adminData = null;            // { teams, users } : données d'administration (compte admin)
 
@@ -482,6 +512,7 @@ function loadSystem() {
 }
 
 function save() {
+  if (sharedView) return;  // le système partagé ne remplace pas le travail en cours
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(system)); } catch (e) { /* ignoré */ }
 }
 
@@ -906,11 +937,11 @@ function drawDragPreview(start) {
  * ============================================================= */
 
 /**
- * Redessine le terrain.
+ * Dessin des joueurs, tracés et balle (SVG, sans le parquet).
  * Sans argument : mode édition de la phase courante.
  * Avec { phase, u } : image de lecture (phase en cours, avancement 0 → 1).
  */
-function render(playback) {
+function courtMarkup(playback) {
   const phaseIndex = playback ? playback.phase : currentPhase;
   const phase = system.phases[phaseIndex];
   const start = phaseStart(phaseIndex);
@@ -944,8 +975,13 @@ function render(playback) {
 
   // 5. Balle
   if (ball) svg += drawBall(ball);
+  return svg;
+}
 
-  dom.court.innerHTML = COURT_SVG + svg;
+/** Redessine le terrain (mêmes arguments que courtMarkup). */
+function render(playback) {
+  const phaseIndex = playback ? playback.phase : currentPhase;
+  dom.court.innerHTML = COURT_SVG + courtMarkup(playback);
 
   // Onglets : à chaque rendu en édition, une seule fois par phase en lecture
   if (!playback || playback.phase !== lastTabsPhase) {
@@ -1453,6 +1489,17 @@ function togglePlayback() {
   requestAnimationFrame(tick);
 }
 
+/** Phase en cours et avancement u (0 → 1) dans cette phase, à l'instant `time` (s) de l'animation. */
+function playbackAt(time) {
+  let phase = 1;
+  let elapsed = 0;
+  while (phase < system.phases.length - 1 && time >= elapsed + phaseDuration(phase)) {
+    elapsed += phaseDuration(phase);
+    phase++;
+  }
+  return { phase, u: Math.min(1, (time - elapsed) / phaseDuration(phase)) };
+}
+
 /** Une image d'animation (appelée par requestAnimationFrame). */
 function tick(timestamp) {
   if (!isPlaying()) return;
@@ -1470,15 +1517,7 @@ function tick(timestamp) {
     anim.done = true;
   }
 
-  // Phase en cours et avancement u dans cette phase
-  let phase = 1;
-  let elapsed = 0;
-  while (phase < system.phases.length - 1 && anim.time >= elapsed + phaseDuration(phase)) {
-    elapsed += phaseDuration(phase);
-    phase++;
-  }
-  const u = Math.min(1, (anim.time - elapsed) / phaseDuration(phase));
-
+  const { phase, u } = playbackAt(anim.time);
   currentPhase = phase;  // en pause, on reste sur la phase affichée
   render({ phase, u });
   dom.timer.textContent = formatTime(anim.wallTime);
@@ -1520,15 +1559,16 @@ function saveLocalLibrary() {
 /**
  * Appel à l'API. Lève une erreur avec `status` (0 = pas de réponse JSON,
  * par ex. réseau coupé ou hébergement statique sans API) et `data` (corps de la réponse).
- * `path` : 'systems' (défaut, limité à l'équipe active), 'auth' ou 'admin'.
+ * `path` : 'systems' (défaut, limité à l'équipe active), 'auth', 'admin' ou 'team'.
  */
-async function api(method, { path = 'systems', name, body } = {}) {
+async function api(method, { path = 'systems', name, body, query } = {}) {
   const params = new URLSearchParams();
   const scoped = path === 'systems';
   if (scoped && cloud.teamId != null) params.set('team', cloud.teamId);
   if (name) params.set('name', name);
-  const query = params.toString();
-  const url = API_BASE + path + (query ? '?' + query : '');
+  for (const [key, value] of Object.entries(query || {})) params.set(key, value);
+  const queryString = params.toString();
+  const url = API_BASE + path + (queryString ? '?' + queryString : '');
   if (scoped && body) body = { ...body, team: cloud.teamId };
 
   const fail = (status, data = null) => Object.assign(new Error('API ' + status), { status, data });
@@ -1552,9 +1592,18 @@ async function api(method, { path = 'systems', name, body } = {}) {
 /** Charge la liste des systèmes de l'équipe active. */
 async function loadTeamLibrary() {
   library = {};
+  cloud.teamInfo = null;
   if (cloud.teamId == null) return;
   const list = await api('GET');
   library = Object.fromEntries(list.map(e => [e.name, { t: e.t, by: e.by, n: e.n }]));
+  await loadTeamInfo();
+}
+
+/** Code et membres de l'équipe active (éditeurs et admins ; sans importance si l'appel échoue). */
+async function loadTeamInfo() {
+  cloud.teamInfo = null;
+  if (!canManageTeam()) return;
+  try { cloud.teamInfo = await api('GET', { path: 'team', query: { id: cloud.teamId } }); } catch (e) { /* panneau masqué */ }
 }
 
 /** Contacte le serveur : session, équipes, bibliothèque (et données d'administration) ; sinon repli local. */
@@ -1624,7 +1673,9 @@ async function whileBusy(task) {
 function renderLibrary() {
   // Pastille d'état + formulaire de connexion
   const [badgeText, badgeTitle] = CLOUD_BADGE[cloud.status];
-  dom.cloudStatus.textContent = isOnline() ? `☁ ${cloud.user.username} · ${ROLE_LABEL[cloud.user.role]}` : badgeText;
+  dom.cloudStatus.textContent = !isOnline() ? badgeText
+    : cloud.user.role === 'guest' ? '☁ Invité · ' + (cloud.teams[0] ? cloud.teams[0].name : '')
+    : `☁ ${cloud.user.username} · ${ROLE_LABEL[cloud.user.role]}`;
   dom.cloudStatus.title = badgeTitle;
   dom.cloudStatus.classList.toggle('is-online', isOnline());
   dom.teamForm.hidden = cloud.status !== 'locked';
@@ -1640,6 +1691,11 @@ function renderLibrary() {
   const localCount = Object.keys(localLibrary).length;
   dom.uploadLocal.hidden = !(isOnline() && localCount && cloud.teamId != null);
   dom.uploadLocal.textContent = MSG.uploadLocal(localCount);
+
+  // Code d'équipe : possible sans compte, ou pour un compte connecté (un invité change d'équipe en se déconnectant)
+  dom.joinForm.hidden = !(cloud.status === 'locked' || (isOnline() && cloud.user.role !== 'guest'));
+  dom.joinCode.disabled = cloud.busy;
+  renderTeamPanel();
 
   const typedName = dom.systemName.value.trim();
   dom.save.textContent = library[typedName] ? 'Mettre à jour' : 'Enregistrer';
@@ -1667,6 +1723,30 @@ function renderLibrary() {
         </div>
       </div>`;
   }).join('');
+}
+
+/** Panneau « Gérer l'équipe » : code d'équipe et membres (éditeurs et admins). */
+function renderTeamPanel() {
+  const info = cloud.teamInfo;
+  const show = isOnline() && canManageTeam() && !!info && info.id === cloud.teamId;
+  dom.teamPanel.hidden = !show;
+  if (!show) return;
+
+  const disabled = cloud.busy ? ' disabled' : '';
+  const members = info.members.map(m => {
+    const self = m.id === cloud.user.id;
+    return `<div class="admin-row" data-member="${m.id}">
+        <div class="admin-row-head">
+          <div><b>${escapeHtml(m.username)}${self ? ' (toi)' : ''}</b><small>${ROLE_LABEL[m.role]}</small></div>
+          ${self ? '' : `<button type="button" data-member-remove title="Retirer de l’équipe"${disabled}>Retirer</button>`}
+        </div>
+      </div>`;
+  }).join('') || '<p class="muted">Aucun membre.</p>';
+
+  dom.teamInfo.innerHTML =
+    `<p>Code d’équipe : <span class="team-code">${escapeHtml(info.code || '—')}</span>
+       <button type="button" data-team-code${disabled}>Nouveau code</button></p>
+     <p class="muted">${MSG.teamCodeHelp}</p>${members}`;
 }
 
 /** Enregistre le système courant sous le nom saisi (en ligne si possible). */
@@ -1720,6 +1800,7 @@ function openFromLibrary(name) {
   if (!library[name]) return;
 
   const load = (data, base) => {
+    endSharedView();
     pushUndo();
     system = clone(data);
     system.name = name;
@@ -1824,6 +1905,51 @@ async function logout() {
   setCloudStatus('locked');
 }
 
+/** Action sur l'équipe active (retirer un membre, nouveau code), puis rechargement du panneau. */
+function teamAction(body, doneMessage) {
+  return whileBusy(async () => {
+    try {
+      await api('POST', { path: 'team', body });
+      await loadTeamInfo();
+      if (doneMessage) setMessage(doneMessage);
+    } catch (e) { onCloudError(e); }
+  });
+}
+
+function onTeamInfoClick(event) {
+  const info = cloud.teamInfo;
+  if (!info) return;
+  if (event.target.closest('[data-team-code]')) {
+    if (confirm(MSG.confirmNewCode)) teamAction({ action: 'regenerate-code', team: info.id }, MSG.codeChanged);
+    return;
+  }
+  const row = event.target.closest('[data-member]');
+  if (!row || !event.target.closest('[data-member-remove]')) return;
+  const member = info.members.find(m => m.id === +row.dataset.member);
+  if (member && confirm(MSG.confirmRemoveMember(member.username, info.name))) {
+    teamAction({ action: 'remove-member', team: info.id, userId: member.id });
+  }
+}
+
+/** Un compte connecté rejoint une équipe grâce à son code. */
+function onJoinSubmit(event) {
+  event.preventDefault();
+  const code = dom.joinCode.value.trim();
+  return whileBusy(async () => {
+    try {
+      const { team, guest } = await api('POST', { path: 'team', body: { action: 'join', code } });
+      dom.joinCode.value = '';
+      cloud.teamId = team.id;
+      writeStored(TEAM_ID_KEY, team.id);
+      cloud.base = null;
+      await connectCloud();
+      if (isOnline()) setMessage(guest ? MSG.guestJoined(team.name) : MSG.joined(team.name));
+    } catch (e) {
+      if (e.status === 404) setMessage(MSG.badCode); else onCloudError(e);
+    }
+  });
+}
+
 /** Changement d'équipe dans la liste déroulante. */
 function onTeamChange() {
   cloud.teamId = +dom.teamSelect.value;
@@ -1846,7 +1972,7 @@ function onLibraryClick(event) {
 /* ---------- Administration (rôle admin) ---------- */
 
 /** Rôle → libellé affiché. */
-const ROLE_LABEL = { admin: 'Admin', editor: 'Éditeur', reader: 'Lecteur' };
+const ROLE_LABEL = { admin: 'Admin', editor: 'Éditeur', reader: 'Lecteur', guest: 'Invité' };
 
 const teamChips = (teams, checked, attr) => teams.map(t =>
   `<label><input type="checkbox" ${attr} value="${t.id}"${checked.has(t.id) ? ' checked' : ''}> ${escapeHtml(t.name)}</label>`
@@ -1963,7 +2089,295 @@ function onAdminUsersChange(event) {
 
 
 /* =============================================================
- * 17. DÉMARRAGE
+ * 17. PARTAGE & EXPORT
+ * -------------------------------------------------------------
+ * Fonctionne sans compte ni serveur :
+ *  - lien de partage : le système est contenu dans l'adresse
+ *    (…/#s=…, JSON compressé). Qui ouvre le lien le voit dans
+ *    l'application, en lecture seule (la lecture se lance avec ▶) ;
+ *  - export JSON (fichier) et GIF animé.
+ * Les données d'un lien viennent de n'importe qui : elles sont
+ * reconstruites champ par champ (sanitizeSystem) avant d'être affichées.
+ * ============================================================= */
+
+const SHARE_PARAM = '#s=';
+const MAX_SHARE_BYTES = 200_000;   // taille maximale du JSON d'un système partagé
+
+/** Dimensions et cadence du GIF exporté. */
+const GIF = {
+  width: 480,        // px (la hauteur suit le rapport du terrain)
+  fps: 24,
+  maxFrames: 400,    // au-delà, la cadence baisse
+  holdStart: 50,     // pause sur la première image (1/100 s)
+  holdEnd: 150,      // pause sur la dernière image (1/100 s)
+};
+const COURT_VIEWBOX = { x: -45, y: -45, width: 590, height: 560 };   // = viewBox de #court
+
+const toBase64Url = bytes => {
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+};
+const fromBase64Url = text => Uint8Array.from(atob(text.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+
+/** Passe `bytes` dans un CompressionStream / DecompressionStream, en refusant plus de `limit` octets. */
+async function transformBytes(bytes, transform, limit) {
+  const reader = new Blob([bytes]).stream().pipeThrough(transform).getReader();
+  const chunks = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.length;
+    if (size > limit) { reader.cancel(); throw new Error('too-large'); }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+  return out;
+}
+
+/** Système → texte pour l'adresse : 'z' + deflate (base64url), ou 'r' + JSON brut si le navigateur ne compresse pas. */
+async function encodeShare(sys) {
+  const raw = new TextEncoder().encode(JSON.stringify(sys));
+  if (typeof CompressionStream !== 'function') return 'r' + toBase64Url(raw);
+  return 'z' + toBase64Url(await transformBytes(raw, new CompressionStream('deflate-raw'), MAX_SHARE_BYTES));
+}
+
+async function decodeShare(text) {
+  const bytes = fromBase64Url(text.slice(1));
+  let raw;
+  if (text[0] === 'z' && typeof DecompressionStream === 'function') {
+    raw = await transformBytes(bytes, new DecompressionStream('deflate-raw'), MAX_SHARE_BYTES);
+  } else if (text[0] === 'r' && bytes.length <= MAX_SHARE_BYTES) {
+    raw = bytes;
+  } else {
+    throw new Error('format');
+  }
+  return JSON.parse(new TextDecoder().decode(raw));
+}
+
+const PLAYER_ID = /^[ad][1-5]$/;
+const ACTION_KINDS = ['move', 'dribble', 'pass', 'screen'];
+
+/**
+ * Reconstruit un système à partir de données non fiables : seuls les champs
+ * connus sont copiés, avec des types et des bornes vérifiés. Retourne null si
+ * les données ne forment pas un système.
+ */
+function sanitizeSystem(raw) {
+  const isObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const playerId = v => (typeof v === 'string' && PLAYER_ID.test(v) ? v : null);
+  const point = v => {
+    if (!isObject(v) || !Number.isFinite(v.x) || !Number.isFinite(v.y)) return null;
+    return { x: clamp(v.x, DRAG_BOUNDS.minX, DRAG_BOUNDS.maxX), y: clamp(v.y, DRAG_BOUNDS.minY, DRAG_BOUNDS.maxY) };
+  };
+  const seconds = v => clamp(v, 0.5, 60);
+  const list = (v, max) => (Array.isArray(v) ? v.slice(0, max) : []);
+
+  const cleanAction = a => {
+    const from = isObject(a) && playerId(a.from);
+    const pt = point(a);
+    if (!from || !pt || !ACTION_KINDS.includes(a.k)) return null;
+    const action = { k: a.k, from, ...pt };
+    if (a.k === 'pass') {
+      if (playerId(a.to)) action.to = a.to;
+    } else if (Array.isArray(a.segs)) {
+      const segs = list(a.segs, 20).map(sg => (isObject(sg) && ACTION_KINDS.includes(sg.k) && point(sg) ? { k: sg.k, ...point(sg) } : null));
+      if (segs.length && segs.every(Boolean)) action.segs = segs;
+    }
+    return action;
+  };
+
+  if (!isObject(raw) || !Array.isArray(raw.phases) || !raw.phases.length || raw.phases.length > 100) return null;
+  const rawStart = isObject(raw.phases[0]) && raw.phases[0].start;
+  if (!isObject(rawStart) || !Array.isArray(rawStart.players)) return null;
+
+  const players = [];
+  for (const p of list(rawStart.players, 10)) {
+    const id = isObject(p) && playerId(p.id);
+    const pt = point(p);
+    if (id && pt && !players.some(q => q.id === id)) players.push({ id, t: id[0], n: +id[1], ...pt });
+  }
+  let ball = null;
+  if (isObject(rawStart.ball)) {
+    const holder = players.find(p => p.id === rawStart.ball.h);
+    const pt = point(rawStart.ball) || holder;
+    if (pt) ball = { h: holder ? holder.id : null, x: pt.x, y: pt.y };
+  }
+
+  const phases = raw.phases.map((rawPhase, i) => {
+    const phase = { start: i === 0 ? { players, ball } : null, actions: [] };
+    if (!isObject(rawPhase)) return phase;
+    phase.actions = list(rawPhase.actions, 20).map(cleanAction).filter(Boolean);
+    const opts = list(rawPhase.opts, 20).map(o => {
+      const from = isObject(o) && playerId(o.from);
+      const to = isObject(o) && (o.to === 'shot' ? 'shot' : playerId(o.to));
+      return from && to ? { from, to } : null;
+    }).filter(Boolean);
+    if (opts.length) phase.opts = opts;
+    if (Number.isFinite(rawPhase.dur)) phase.dur = seconds(rawPhase.dur);
+    return phase;
+  });
+
+  const clean = {
+    dur: Number.isFinite(raw.dur) ? seconds(raw.dur) : DEFAULT_PHASE_DURATION,
+    speed: Number.isFinite(raw.speed) ? clamp(raw.speed, 0.5, 2) : 1,
+    phases,
+  };
+  if (typeof raw.name === 'string') clean.name = raw.name.trim().slice(0, 40);
+  normalizeSystem(clean);
+  return clean;
+}
+
+/* ---------- Système ouvert depuis un lien ---------- */
+
+/** Affiche le système du lien (#s=…) en lecture seule, sans toucher au travail en cours. */
+async function openSharedFromHash() {
+  if (!location.hash.startsWith(SHARE_PARAM)) return;
+  let shared = null;
+  try { shared = sanitizeSystem(await decodeShare(location.hash.slice(SHARE_PARAM.length))); } catch (e) { /* lien invalide */ }
+  if (!shared) { setMessage(MSG.sharedInvalid); return; }
+
+  sharedView = true;
+  system = shared;
+  currentPhase = 0;
+  anim = null;
+  undoStack = [];
+  redoStack = [];
+  clearSelection();
+  dom.sharedBanner.hidden = false;
+  syncReadOnly();
+  loadIntoUI();
+  setMessage(MSG.sharedOpened(system.name));
+}
+
+/** Quitte la vue « système partagé » (le système affiché reste en mémoire). */
+function endSharedView() {
+  if (!sharedView) return;
+  sharedView = false;
+  dom.sharedBanner.hidden = true;
+  if (location.hash.startsWith(SHARE_PARAM)) history.replaceState(null, '', location.pathname + location.search);
+  syncReadOnly();
+}
+
+/** « Modifier une copie » : le système partagé devient le système en cours d'édition. */
+function copySharedToEditor() {
+  const previous = readStored(STORAGE_KEY);
+  const untouched = !previous || previous === JSON.stringify(createDefaultSystem());
+  if (!untouched && !confirm(MSG.confirmReplaceDraft)) return;
+  endSharedView();
+  save();
+  loadIntoUI();
+}
+
+/* ---------- Export ---------- */
+
+async function shareLink() {
+  let url;
+  try {
+    url = location.href.split('#')[0] + SHARE_PARAM + await encodeShare(system);
+  } catch (e) {
+    setMessage(MSG.linkFailed);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    setMessage(MSG.linkCopied);
+  } catch (e) {
+    prompt(MSG.linkPrompt, url);   // presse-papiers indisponible : copie manuelle
+  }
+}
+
+function downloadBlob(blob, filename) {
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+}
+
+const exportFileName = extension =>
+  ((system.name || 'systeme').replace(/[^\p{L}\p{N}_ -]+/gu, '').trim().replace(/\s+/g, '-') || 'systeme') + '.' + extension;
+
+function exportJsonFile() {
+  downloadBlob(new Blob([JSON.stringify(system)], { type: 'application/json' }), exportFileName('json'));
+}
+
+/** Image de l'animation au format SVG autonome (couleurs du thème actuel, sans variables CSS). */
+function frameSvg(playback) {
+  const theme = getComputedStyle(document.documentElement);
+  const { x, y, width, height } = COURT_VIEWBOX;
+  const body = `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="var(--out)"/>` + COURT_SVG + courtMarkup(playback);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${x} ${y} ${width} ${height}" width="${width}" height="${height}">`
+    + '<style>text{font-family:Arial,Helvetica,sans-serif;font-weight:700}</style>'
+    + body.replace(/var\((--[\w-]+)\)/g, (_, name) => theme.getPropertyValue(name).trim() || '#000')
+    + '</svg>';
+}
+
+function rasterize(svg, ctx, width, height) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(ctx.getImageData(0, 0, width, height));
+    };
+    img.onerror = () => reject(new Error('svg'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+
+let gifBusy = false;
+
+/** Génère un GIF animé du système (toutes les phases, à la vitesse choisie) et le télécharge. */
+async function exportGif() {
+  if (gifBusy) return;
+  if (system.phases.length < 2) { setMessage(MSG.needPhase); return; }
+  gifBusy = true;
+  dom.exportGif.disabled = true;
+  try {
+    const width = GIF.width;
+    const height = Math.round(width * COURT_VIEWBOX.height / COURT_VIEWBOX.width);
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+    // Instants (en temps « système ») des images : cadence fixe, plafonnée par maxFrames
+    const total = totalDuration();
+    const speed = system.speed || 1;
+    const step = Math.max(speed / GIF.fps, total / GIF.maxFrames);
+    const count = Math.ceil(total / step) + 1;
+    const frameAt = i => rasterize(frameSvg(playbackAt(Math.min(total, i * step))), ctx, width, height);
+    const delay = Math.max(2, Math.round(step / speed * 100));
+
+    // Palette commune, calculée sur quelques images réparties dans l'animation
+    const sampleEvery = Math.ceil(count / 8);
+    const samples = [];
+    for (let i = 0; i < count; i += sampleEvery) samples.push(await frameAt(i));
+    samples.push(await frameAt(count - 1));
+    const gif = createGifWriter(width, height, buildGifPalette(samples));
+
+    for (let i = 0; i < count; i++) {
+      gif.addFrame(await frameAt(i), delay + (i === 0 ? GIF.holdStart : 0) + (i === count - 1 ? GIF.holdEnd : 0));
+      if (i % 5 === 0) setMessage(MSG.gifProgress(Math.round(100 * i / count)));
+    }
+    downloadBlob(gif.finish(), exportFileName('gif'));
+    setMessage(MSG.gifDone);
+  } catch (e) {
+    setMessage(MSG.gifFailed);
+  } finally {
+    gifBusy = false;
+    dom.exportGif.disabled = false;
+  }
+}
+
+
+/* =============================================================
+ * 18. DÉMARRAGE
  * ============================================================= */
 
 /** (Re)synchronise toute l'interface avec `system` (au démarrage, après import / ouverture / reset). */
@@ -2014,6 +2428,17 @@ dom.adminUsers.addEventListener('change', onAdminUsersChange);
 // Retour sur l'onglet : on rafraîchit la liste (modifications des autres comptes)
 window.addEventListener('focus', () => { if (isOnline() && !cloud.busy) connectCloud(); });
 
+// Équipe : code et membres
+dom.joinForm.addEventListener('submit', onJoinSubmit);
+dom.teamInfo.addEventListener('click', onTeamInfoClick);
+
+// Partage et export
+dom.share.addEventListener('click', shareLink);
+dom.exportFile.addEventListener('click', exportJsonFile);
+dom.exportGif.addEventListener('click', exportGif);
+dom.sharedCopy.addEventListener('click', copySharedToEditor);
+window.addEventListener('hashchange', openSharedFromHash);
+
 // Export / import
 dom.exportBtn.addEventListener('click', exportJson);
 dom.importBtn.addEventListener('click', importJson);
@@ -2039,3 +2464,4 @@ localLibrary = library = loadLocalLibrary();
 cloud.teamId = +readStored(TEAM_ID_KEY) || null;
 loadIntoUI();
 connectCloud();
+openSharedFromHash();

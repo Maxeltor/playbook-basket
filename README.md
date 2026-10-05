@@ -8,9 +8,11 @@ functions/api/       → l'API de sauvegarde (Cloudflare Pages Functions)
   _middleware.js     →   session, rôles et droits d'accès par équipe
   auth.js            →   connexion / déconnexion
   admin.js           →   équipes et comptes (réservé aux admins)
+  team.js            →   code d'équipe, membres (éditeurs), rejoindre une équipe
   systems.js         →   lister / lire / enregistrer / supprimer un système (par équipe)
 schema.sql           → tables de la base D1 (SQLite)
 migrate-data.sql     → migration depuis l'ancienne version (code d'équipe unique)
+migrate-team-codes.sql → ajoute les codes d'équipe à une base existante
 wrangler.toml        → configuration Cloudflare
 ```
 
@@ -32,6 +34,15 @@ Chaque personne se connecte avec un **identifiant + mot de passe**. Trois rôles
 - Chaque enregistrement mémorise l'identifiant de son auteur.
 - **Conflits** : si quelqu'un a modifié un système depuis que vous l'avez ouvert, l'application
   demande confirmation avant d'écraser sa version.
+- **Gérer son équipe** : un éditeur (« Gérer l’équipe » sous la bibliothèque) voit le code de l’équipe,
+  peut le **changer** (l’ancien cesse de fonctionner) et **retirer des membres** (leur compte est conservé).
+  Un compte connecté rejoint une équipe en saisissant son code (« Rejoindre l’équipe »).
+- **Invité (sans compte)** : depuis l’écran non connecté, saisir le code d’équipe donne un accès **en lecture seule**
+  à la bibliothèque de cette équipe (cookie `pb_team`, 30 jours). Quand un éditeur change le code,
+  les invités qui avaient l’ancien perdent l’accès. « Déconnexion » revient aux systèmes locaux.
+- **Sans compte** : on peut créer des systèmes (enregistrés dans le navigateur), les **partager par lien**
+  (le système est contenu dans l’adresse `#s=…` ; qui ouvre le lien le voit en lecture seule dans l’application
+  et peut « Modifier une copie ») et les **exporter** en JSON ou en GIF animé.
 - **Local** : sans API (fichier `index.html` ouvert directement, hébergement statique), la bibliothèque
   reste dans le navigateur, sans comptes, comme avant.
 
@@ -67,6 +78,12 @@ L'application est alors disponible sur `https://playbook-basket.pages.dev` (ou u
 Connectez-vous avec `admin` + ce mot de passe, puis créez équipes et comptes dans « Administration ».
 Une fois le compte admin créé (1re connexion), `ADMIN_PASSWORD` ne sert plus : changez ensuite le mot de passe
 depuis l'application (🔑).
+
+### Ajouter les codes d'équipe à une base existante
+
+```bash
+npx wrangler d1 execute playbook-basket --remote --file=migrate-team-codes.sql
+```
 
 ### Migrer une base existante (ancienne version avec code d'équipe)
 

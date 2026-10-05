@@ -29,6 +29,7 @@
 
   <link rel="stylesheet" href="style.css">
   <!-- « defer » : le script s'exécute une fois la page chargée -->
+  <script src="gif.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -42,6 +43,12 @@
       <span id="timer">00:00.0</span>
     </div>
   </header>
+
+  <!-- ===== Bandeau d'un système ouvert depuis un lien de partage (lecture seule) ===== -->
+  <div id="shared-banner" class="shared-banner" hidden>
+    <span>👁 Système partagé, en lecture seule. Appuie sur ▶ Lecture pour le voir jouer.</span>
+    <button type="button" id="btn-shared-copy">Modifier une copie</button>
+  </div>
 
   <main class="layout">
 
@@ -120,6 +127,28 @@
         </div>
         <button type="button" id="btn-upload-local" class="edit-only" hidden></button>
         <div id="library-list"></div>
+
+        <!-- Rejoindre une équipe avec son code (compte connecté) -->
+        <form id="join-form" class="controls" hidden>
+          <input id="join-code" type="text" placeholder="Code d’équipe" maxlength="12" autocomplete="off" required>
+          <button type="submit">Rejoindre l’équipe</button>
+        </form>
+
+        <!-- Gestion de l'équipe active (éditeurs et admins) -->
+        <details id="team-panel" hidden>
+          <summary>Gérer l’équipe</summary>
+          <div id="team-info"></div>
+        </details>
+      </section>
+
+      <!-- ===== Partage et export (ouvert à tous, sans compte) ===== -->
+      <section id="share">
+        <h3 class="panel-title">Partager / exporter</h3>
+        <div class="controls">
+          <button type="button" id="btn-share">🔗 Lien de partage</button>
+          <button type="button" id="btn-export-file">⬇ JSON</button>
+          <button type="button" id="btn-export-gif">🎞 GIF</button>
+        </div>
       </section>
 
       <!-- ===== Administration : équipes et comptes (rôle admin uniquement) ===== -->

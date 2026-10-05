@@ -2,7 +2,7 @@
  * Playbook Basket — connexion
  * -------------------------------------------------------------
  *   POST   /api/auth  ← { username, password } → { id, username, role, teams }  (+ cookie de session)
- *   GET    /api/auth  → { id, username, role, teams }   (session en cours)
+ *   GET    /api/auth  → { id, username, role, teams }   (session en cours ; invité : id null, role 'guest')
  *   DELETE /api/auth  → { ok: true }                    (déconnexion)
  *
  * Premier démarrage : si aucun compte n'existe, la connexion avec
@@ -11,7 +11,7 @@
 
 import {
   json, sameText, hashPassword, randomHex, sha256Hex, readCookie, sessionCookie,
-  teamsOf, SESSION_COOKIE, SESSION_DAYS,
+  teamsOf, SESSION_COOKIE, TEAM_COOKIE, SESSION_DAYS,
 } from './_middleware.js';
 
 const me = async (db, user) => ({ id: user.id, username: user.username, role: user.role, teams: await teamsOf(db, user) });
@@ -71,5 +71,7 @@ export async function onRequestGet({ env, data }) {
 export async function onRequestDelete({ request, env }) {
   const token = readCookie(request, SESSION_COOKIE);
   if (token) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256Hex(token)).run();
-  return json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, '', 0) });
+  const res = json({ ok: true }, 200, { 'Set-Cookie': sessionCookie(request, '', 0) });
+  res.headers.append('Set-Cookie', sessionCookie(request, '', 0, TEAM_COOKIE));  // quitte aussi l'équipe d'invité
+  return res;
 }

@@ -595,3 +595,52 @@ body.is-readonly .edit-only {
   opacity: .85;
   pointer-events: none;
 }
+
+
+/* Système ouvert depuis un lien de partage */
+.shared-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  max-width: var(--page-width);
+  margin: 8px auto 0;
+  padding: 8px 12px;
+  border: 1px solid var(--lane-open);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 14px;
+}
+.shared-banner[hidden] { display: none; }
+@media (min-width: 960px) {
+  .shared-banner { max-width: var(--page-width-wide); }
+}
+
+#share { margin-top: 14px; }
+
+/* Gestion de l'équipe et rejoindre par code */
+#team-panel { margin-top: 12px; }
+#team-panel summary { cursor: pointer; font: 700 18px var(--font-title); }
+.team-code {
+  padding: 1px 8px;
+  border-radius: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font: 700 18px monospace;
+  letter-spacing: 1px;
+  user-select: all;
+}
+#join-form { margin-top: 12px; }
+#join-form[hidden], #team-panel[hidden] { display: none; }
+#join-code {
+  flex: 1 1 140px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  font: 16px var(--font-body);
+  text-transform: uppercase;
+}
